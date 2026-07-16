@@ -172,7 +172,15 @@ async function callGemini(messages) {
   const payload = {
     system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents,
-    generationConfig: { maxOutputTokens: 512, temperature: 0.7 },
+    // Let Gemini search the web to answer real-world questions
+    // (local schools, raising bilingual children, etc.)
+    tools: [{ google_search: {} }],
+    generationConfig: {
+      maxOutputTokens: 2048,
+      temperature: 0.7,
+      // Thinking stays ON (default budget) so it can reason through
+      // complex questions. We filter the thinking out below.
+    },
   };
   const r = await fetch(url, {
     method: "POST",
@@ -185,9 +193,24 @@ async function callGemini(messages) {
     return null;
   }
   const data = await r.json();
+  return extractGeminiText(data);
+}
+
+// Pull only the final answer text out of a Gemini response, skipping any
+// "thought" parts that the thinking phase produces.
+function extractGeminiText(data) {
   try {
-    return data.candidates[0].content.parts[0].text.trim();
-  } catch { return null; }
+    const parts = data.candidates[0].content.parts || [];
+    const answer = parts
+      .filter(p => p && typeof p.text === "string" && p.thought !== true)
+      .map(p => p.text)
+      .join("")
+      .trim();
+    return answer || null;
+  } catch (e) {
+    console.error("Gemini parse error", e, data);
+    return null;
+  }
 }
 
 async function callAbairComhra(messages) {
@@ -210,15 +233,73 @@ async function callAbairComhra(messages) {
   return null;
 }
 
+let currentAudio = null;
+let currentAudioResolve = null;
+
 function playBase64Wav(b64) {
   return new Promise(resolve => {
     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     const url = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
     const audio = new Audio(url);
-    audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-    audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-    audio.play().catch(() => resolve());
+    currentAudio = audio;
+    currentAudioResolve = resolve;
+    const cleanup = () => {
+      URL.revokeObjectURL(url);
+      if (currentAudio === audio) { currentAudio = null; currentAudioResolve = null; }
+      resolve();
+    };
+    audio.onended = cleanup;
+    audio.onerror = cleanup;
+    audio.play().catch(cleanup);
   });
+}
+
+function stopPlayback() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.currentTime = 0;
+    currentAudio = null;
+  }
+  // Resolve the awaiting promise in askAI so its flow completes cleanly
+  if (currentAudioResolve) {
+    const r = currentAudioResolve;
+    currentAudioResolve = null;
+    r();
+  }
+}
+
+// Stop the TTS playback (does not start a new recording).
+function stopAudioPlayback() {
+  stopPlayback();
+  $("stopAudioBtn").disabled = true;
+  if (isProcessing) {
+    isProcessing = false;
+    $("recordBtn").disabled = false;
+    updateSeolState();
+  }
+  setStatus("Stopadh an fhuaim.");
+}
+
+// Download the current conversation as a .txt file.
+function downloadConversation() {
+  const name = Convos.current();
+  const msgs = Convos.messages(name);
+  if (!msgs.length) { setStatus("Níl aon rud le híoslódáil."); return; }
+
+  let text = `# ${name}\n\n`;
+  msgs.forEach(m => {
+    text += (m.role === "user" ? "Tú: " : "AI: ") + m.content + "\n\n";
+  });
+
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${name}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -269,6 +350,8 @@ function wireEvents() {
   $("seiceailBtn").onclick = toggleSeiceail;
   $("settingsBtn").onclick = () => $("settingsModal").classList.add("show");
   $("newConvoBtn").onclick = newConversation;
+  $("stopAudioBtn").onclick = stopAudioPlayback;
+  $("downloadBtn").onclick = downloadConversation;
 
   $("convoSelect").onchange = onConvoChange;
 
@@ -299,12 +382,13 @@ function wireEvents() {
     ]);
   });
 
-  // Global: Escape closes modals/menus
+  // Global: Escape closes modals/menus, stops audio, cancels recording
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {
       hideCtxMenu();
       document.querySelectorAll(".modal-overlay.show")
         .forEach(m => m.classList.remove("show"));
+      if (currentAudio) { stopAudioPlayback(); return; }
       if (isRecording) cancelRecording();
     }
     if (e.ctrlKey && (e.key === "n" || e.key === "N")) {
@@ -453,10 +537,10 @@ async function processAudio() {
 
   if (seiceailOn) {
     stopThinking();
-    $("messageEdit").value = transcript;
-    updateSeolState();
-    $("recordBtn").disabled = false;
     isProcessing = false;
+    $("messageEdit").value = transcript;
+    $("recordBtn").disabled = false;
+    updateSeolState();
     setStatus("Cuir an téacs in eagar, ansin brúigh Seol.");
     return;
   }
@@ -485,7 +569,11 @@ async function askAI(transcript) {
   startThinking("Ag léamh an fhreagra");
   try {
     const b64 = await synthesizeSpeech(response, voiceId);
+    stopThinking();
+    setStatus("Ag léamh an fhreagra... (brúigh Stop an Fhuaim chun stopadh)");
+    $("stopAudioBtn").disabled = false;
     await playBase64Wav(b64);
+    $("stopAudioBtn").disabled = true;
   } catch (e) { /* speech failed, text still shown */ }
 
   done("Ullamh. Brúigh chun tosú arís.");
@@ -531,6 +619,7 @@ function done(msg) {
   setStatus(msg);
   isProcessing = false;
   $("recordBtn").disabled = false;
+  $("stopAudioBtn").disabled = true;
   updateSeolState();
 }
 

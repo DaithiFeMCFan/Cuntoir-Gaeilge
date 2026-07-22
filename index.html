@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cúntóir AI Gaeilge</title>
-<!-- Leagan 0.01 -->
+<!-- Leagan 0.02 -->
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -212,9 +212,12 @@
     .msg-row {
       flex: 1 1 auto;
       min-height: 120px;
+      display: flex;
     }
     .msg-row #messageEdit {
-      height: 100%;
+      flex: 1;
+      height: auto;
+      align-self: stretch;
     }
 
     /* Keep history a fixed, scrollable size so the message box is the
@@ -260,6 +263,7 @@
     <!-- Secondary button row -->
     <div class="row">
       <button id="stopAudioBtn" class="flex1" title="Seinn/stop an fhuaim">Seinn an Teachtaireacht is Déanaí</button>
+      <button id="seolBtn" class="seol-btn" disabled>Seol</button>
       <button id="downloadBtn" title="Íoslódáil an comhrá reatha mar théacs">Íoslódáil</button>
     </div>
 
@@ -274,7 +278,6 @@
     <div class="row msg-row" style="align-items: stretch;">
       <textarea id="messageEdit" class="flex1" rows="3"
         placeholder="Scríobh anseo, nó úsáid an micreafón..."></textarea>
-      <button id="seolBtn" class="seol-btn" disabled>Seol</button>
     </div>
 
     <!-- History -->
@@ -338,6 +341,6 @@
 <!-- Right-click context menu -->
 <div class="ctx-menu" id="ctxMenu"></div>
 
-<script src="app.js?v=0.01"></script>
+<script src="app.js?v=0.02"></script>
 </body>
 </html>

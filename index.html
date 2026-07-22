@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cúntóir AI Gaeilge</title>
+<!-- Leagan 0.01 -->
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -54,6 +55,8 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    flex: 1;
+    min-height: 0;
   }
 
   .row {
@@ -203,7 +206,23 @@
   @media (max-width: 640px) {
     body { padding: 0; }
     .window { max-width: none; min-height: 100vh; }
-    .history { height: 200px; }
+
+    /* Let the message box grow to fill the screen's spare height,
+       so there's no wasted grey area at the bottom on phones. */
+    .msg-row {
+      flex: 1 1 auto;
+      min-height: 120px;
+    }
+    .msg-row #messageEdit {
+      height: 100%;
+    }
+
+    /* Keep history a fixed, scrollable size so the message box is the
+       element that absorbs the extra space. */
+    .history {
+      height: 200px;
+      flex: 0 0 auto;
+    }
   }
 </style>
 </head>
@@ -252,7 +271,7 @@
 
     <!-- Message box -->
     <div class="bold">Teachtaireacht:</div>
-    <div class="row" style="align-items: stretch;">
+    <div class="row msg-row" style="align-items: stretch;">
       <textarea id="messageEdit" class="flex1" rows="3"
         placeholder="Scríobh anseo, nó úsáid an micreafón..."></textarea>
       <button id="seolBtn" class="seol-btn" disabled>Seol</button>
@@ -319,6 +338,6 @@
 <!-- Right-click context menu -->
 <div class="ctx-menu" id="ctxMenu"></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=0.01"></script>
 </body>
 </html>

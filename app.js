@@ -28,6 +28,14 @@ const ABAIR_TTS_URL    = "https://synthesis.abair.ie/api/synthesise";
 const ABAIR_COMHRA_URL = "https://www.abair.ie/api/s2s";
 const GEMINI_MODEL     = "gemini-2.5-flash";
 
+// ── COMHRÁ proxy ──────────────────────────────────────────────────────────────
+// abair's COMHRÁ endpoint blocks direct browser calls (no CORS headers).
+// Set this to your deployed Cloudflare Worker URL to enable COMHRÁ in the
+// browser. Leave it as "" to call abair directly (works on desktop /
+// same-origin, but fails on GitHub Pages with a CORS error).
+// Example: "https://cuntoir-comhra.your-name.workers.dev"
+const COMHRA_PROXY_URL = "https://cuntoir-comhra.japanesethrowaway1337.workers.dev/";
+
 const SYSTEM_PROMPT =
   "Is cúntóir Gaeilge thú. Labhraíonn tú i nGaeilge amháin. " +
   "Freagair i nGaeilge, le do thoil, agus bí gonta, soiléir agus cabharthach.";
@@ -214,7 +222,10 @@ function extractGeminiText(data) {
 }
 
 async function callAbairComhra(messages) {
-  const r = await fetch(ABAIR_COMHRA_URL, {
+  // Use the Cloudflare Worker proxy if configured; otherwise hit abair
+  // directly (which will fail on GitHub Pages due to CORS).
+  const target = COMHRA_PROXY_URL || ABAIR_COMHRA_URL;
+  const r = await fetch(target, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages }),
@@ -559,6 +570,10 @@ async function askAI(transcript) {
     response = await getAiResponse(Convos.messages(Convos.current()), aiName);
   } catch (e) {
     Convos.popLast();
+    // COMHRÁ needs the proxy on a hosted site; give a clear hint.
+    if (aiName === "Abair COMHRÁ" && !COMHRA_PROXY_URL) {
+      return done("Teastaíonn seachfhreastalaí (proxy) le COMHRÁ a úsáid ar an ngréasán. Bain triail as Gemini.");
+    }
     return done("Earráid AI: " + e.message);
   }
   if (!response) { Convos.popLast(); return done("Níor tháinig freagra ón AI."); }

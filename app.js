@@ -279,16 +279,50 @@ function stopPlayback() {
   }
 }
 
-// Stop the TTS playback (does not start a new recording).
-function stopAudioPlayback() {
-  stopPlayback();
-  $("stopAudioBtn").disabled = true;
-  if (isProcessing) {
-    isProcessing = false;
-    $("recordBtn").disabled = false;
-    updateSeolState();
+// The audio button has two modes depending on whether audio is playing:
+//   - playing:  "Stop an Fhuaim"                → stops playback
+//   - idle:     "Seinn an Teachtaireacht is Déanaí" → replays last AI reply
+function setAudioBtnMode(playing) {
+  const btn = $("stopAudioBtn");
+  if (playing) {
+    btn.textContent = "Stop an Fhuaim";
+    btn.disabled = false;
+  } else {
+    btn.textContent = "Seinn an Teachtaireacht is Déanaí";
+    // Enabled only if there's an AI message to replay
+    btn.disabled = !lastAssistantMessage();
   }
-  setStatus("Stopadh an fhuaim.");
+}
+
+function lastAssistantMessage() {
+  const msgs = Convos.messages(Convos.current());
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === "assistant") return msgs[i].content;
+  }
+  return null;
+}
+
+// Click handler: stop if playing, otherwise replay the last AI message.
+async function onAudioBtnClick() {
+  if (currentAudio) {
+    stopPlayback();
+    setStatus("Stopadh an fhuaim.");
+    setAudioBtnMode(false);
+    return;
+  }
+  const text = lastAssistantMessage();
+  if (!text || isProcessing) return;
+  const voiceId = $("voiceSelect").value;
+  setStatus("Ag léamh an fhreagra...");
+  setAudioBtnMode(true);
+  try {
+    const b64 = await synthesizeSpeech(text, voiceId);
+    await playBase64Wav(b64);
+  } catch (e) {
+    setStatus("Níor éirigh leis an fhuaim a sheinm.");
+  }
+  setAudioBtnMode(false);
+  if (!isProcessing) setStatus("Ullamh. Brúigh chun tosú arís.");
 }
 
 // Download the current conversation as a .txt file.
@@ -353,6 +387,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
   wireEvents();
   setStatus("Brúigh chun tosú.");
+  setAudioBtnMode(false);
 });
 
 function wireEvents() {
@@ -361,7 +396,7 @@ function wireEvents() {
   $("seiceailBtn").onclick = toggleSeiceail;
   $("settingsBtn").onclick = () => $("settingsModal").classList.add("show");
   $("newConvoBtn").onclick = newConversation;
-  $("stopAudioBtn").onclick = stopAudioPlayback;
+  $("stopAudioBtn").onclick = onAudioBtnClick;
   $("downloadBtn").onclick = downloadConversation;
 
   $("convoSelect").onchange = onConvoChange;
@@ -399,7 +434,7 @@ function wireEvents() {
       hideCtxMenu();
       document.querySelectorAll(".modal-overlay.show")
         .forEach(m => m.classList.remove("show"));
-      if (currentAudio) { stopAudioPlayback(); return; }
+      if (currentAudio) { stopPlayback(); setStatus("Stopadh an fhuaim."); setAudioBtnMode(false); return; }
       if (isRecording) cancelRecording();
     }
     if (e.ctrlKey && (e.key === "n" || e.key === "N")) {
@@ -433,7 +468,6 @@ function onConvoChange() {
   if (isProcessing) { refreshConvoSelect(); return; }
   Convos.setCurrent($("convoSelect").value);
   refreshHistory();
-  $("transcriptBox").textContent = "";
 }
 
 function newConversation() {
@@ -441,7 +475,6 @@ function newConversation() {
   Convos.create();
   refreshConvoSelect();
   refreshHistory();
-  $("transcriptBox").textContent = "";
 }
 
 function refreshHistory() {
@@ -458,6 +491,7 @@ function refreshHistory() {
     box.appendChild(div);
   });
   box.scrollTop = box.scrollHeight; // auto-scroll to newest
+  if (typeof setAudioBtnMode === "function" && !currentAudio) setAudioBtnMode(false);
 }
 
 // ── Recording ─────────────────────────────────────────────────────────────────
@@ -491,7 +525,6 @@ async function startRecording() {
 
   isRecording = true;
   $("recordBtn").textContent = "Stop";
-  $("transcriptBox").textContent = "";
   setStatus("Ag éisteacht...");
 }
 
@@ -544,7 +577,6 @@ async function processAudio() {
   } catch (e) {
     return done("Níor éirigh leis an aithint. Bain triail eile as.");
   }
-  $("transcriptBox").textContent = "Tú: " + transcript;
 
   if (seiceailOn) {
     stopThinking();
@@ -585,10 +617,9 @@ async function askAI(transcript) {
   try {
     const b64 = await synthesizeSpeech(response, voiceId);
     stopThinking();
-    setStatus("Ag léamh an fhreagra... (brúigh Stop an Fhuaim chun stopadh)");
-    $("stopAudioBtn").disabled = false;
+    setStatus("Ag léamh an fhreagra...");
+    setAudioBtnMode(true);
     await playBase64Wav(b64);
-    $("stopAudioBtn").disabled = true;
   } catch (e) { /* speech failed, text still shown */ }
 
   done("Ullamh. Brúigh chun tosú arís.");
@@ -634,7 +665,7 @@ function done(msg) {
   setStatus(msg);
   isProcessing = false;
   $("recordBtn").disabled = false;
-  $("stopAudioBtn").disabled = true;
+  setAudioBtnMode(false);
   updateSeolState();
 }
 
